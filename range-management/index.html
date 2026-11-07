@@ -52,17 +52,37 @@
   .cov i{display:block;height:100%;background:var(--acc)}
   .hide{display:none!important}
   .m-mid{color:var(--warn);font-weight:600}
+  .cell{border:1px solid var(--line);border-radius:10px;padding:10px;min-height:92px;font-size:12.5px}
+  .cell.gap{border-style:dashed;color:var(--mute);background:#fafbfc}
+  .cell b{font-size:15px;display:block}.cell small{color:var(--mute);display:block;word-break:break-word}
+  .agrid{display:grid;gap:8px;margin-top:8px}.agrid .h{font-size:12px;color:var(--mute);font-weight:600;align-self:center}
+  .sl{display:grid;grid-template-columns:110px 1fr 54px;gap:10px;align-items:center;margin:8px 0;font-size:13px}
+  .sl input{padding:0}.sl b{text-align:right}
+  .hl{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--line)}.hl:last-child{border:0}
+  .sev{flex:none;padding:2px 9px;border-radius:99px;font-size:12px;font-weight:600}
+  .sev.bad{background:#fdecea;color:var(--bad)}.sev.warn{background:#fff3e0;color:var(--warn)}.sev.ok{background:#e6f4ec;color:var(--ok)}
+  .hl div small{display:block;color:var(--mute)}
+  .three{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+  .three ul{margin:0;padding-left:18px}.three li{margin:2px 0}
+  .ladder .me{background:var(--acc2);font-weight:600}
+  .x.info{color:var(--acc)}
+  @media(max-width:760px){
+    header{padding:10px 12px;gap:8px}.tabs{order:5;width:100%;overflow-x:auto}.tabs button{white-space:nowrap}
+    main{padding:12px}th,td{padding:7px 8px}.grid{grid-template-columns:1fr}.tgrid{grid-template-columns:1fr}
+    .sl{grid-template-columns:80px 1fr 48px}
+  }
 </style>
 </head>
 <body>
 <header>
   <h1>Range Builder</h1>
-  <nav class="tabs" id="tabs"><button data-v="range" class="on">Range</button><button data-v="targets">Targets</button><button data-v="sellin">Sell-in</button><button data-v="compare">Compare</button></nav>
+  <nav class="tabs" id="tabs"><button data-v="range" class="on">Range</button><button data-v="arch">Architecture</button><button data-v="targets">Targets</button><button data-v="sellin">Sell-in</button><button data-v="scen">Scenario</button><button data-v="health">Health</button><button data-v="compare">Compare</button></nav>
   <select id="season"></select>
   <button class="ghost" id="newSeason">+ Season</button>
   <span style="flex:1"></span>
   <button class="ghost" id="reset">Reset sample data</button>
   <button class="ghost" id="csv">Export CSV</button>
+  <button class="ghost" id="imp">Import CSV</button><input type="file" id="impf" accept=".csv,text/csv" class="hide">
   <button class="primary" id="add">+ Add product</button>
 </header>
 <main id="v-range">
@@ -79,6 +99,18 @@
   <p class="note">Prototype: sample data, stored only in this browser (localStorage). Margin = (wholesale − cost) / wholesale.</p>
 </main>
 
+<main id="v-arch" class="hide">
+  <div class="toolbar"><span style="color:var(--mute)">Rows:</span><select id="archDim"><option value="category">Category</option><option value="gender">Gender / age</option><option value="role">Role</option></select><span style="color:var(--mute)">Columns: price tier. Cell shade = share of sell-in €. Dashed cells are gaps.</span></div>
+  <div id="archBody"></div>
+</main>
+<main id="v-scen" class="hide">
+  <p class="note" style="margin:0 0 12px">What-if simulation. Move the sliders to change units by role, wholesale price by tier and cost inflation. Your real plan is not changed.</p>
+  <div class="tgrid"><div class="card" id="scCtl"></div><div class="card" id="scOut"></div></div>
+</main>
+<main id="v-health" class="hide">
+  <div class="kpis" id="hKpis"></div>
+  <div class="card" id="hList"></div>
+</main>
 <main id="v-targets" class="hide">
   <p class="note" style="margin:0 0 12px">Set your target mix (% of sell-in €) per dimension. Variance = actual − target in percentage points; red where the gap is more than 5 pp.</p>
   <div class="tgrid" id="tgBody"></div>
@@ -86,12 +118,16 @@
 <main id="v-sellin" class="hide">
   <div class="kpis" id="siKpis"></div>
   <p class="note" style="margin:0 0 10px">Enter ordered units per customer. Coverage = total ordered ÷ planned units.</p>
+  <div class="card" style="margin-bottom:12px"><h3>By customer</h3><div class="scroll"><table><thead><tr><th>Customer</th><th class="n">Units</th><th class="n">Ordered €</th><th class="n">Share</th><th class="n">Basket margin</th><th>Hero/Core articles not taken</th></tr></thead><tbody id="siCust"></tbody></table></div></div>
   <div class="scroll"><table><thead id="siHead"></thead><tbody id="siBody"></tbody><tfoot id="siFoot"></tfoot></table></div>
 </main>
 <main id="v-compare" class="hide">
   <div class="toolbar"><select id="cmpA"></select><span>vs</span><select id="cmpB"></select></div>
+  <div class="three" id="carry" style="margin-bottom:12px"></div>
   <div class="scroll"><table><thead><tr><th>Metric</th><th class="n" id="cA"></th><th class="n" id="cB"></th><th class="n">Δ</th></tr></thead><tbody id="cmpBody"></tbody></table></div>
 </main>
+
+<dialog id="dlg2"><div id="dtl"></div><div class="row"><button class="ghost" id="dclose">Close</button></div></dialog>
 
 <dialog id="dlg"><form method="dialog" id="form">
   <h2 id="dlgT">Add product</h2>
@@ -188,8 +224,8 @@ function render(){
     <td class="n">${eur(x.cost)}</td><td class="n">${eur(x.wholesale)}</td><td class="n">${eur(x.retail)}</td>
     <td class="n ${m>=.5?"m-good":m<.45?"m-low":""}">${(m*100).toFixed(0)}%</td>
     <td class="n">${x.units.toLocaleString("en-GB")}</td><td class="n">${eur(x.wholesale*x.units)}</td>
-    <td><button class="x" data-del="${x.id}" title="Delete">✕</button></td></tr>`}).join(""):`<tr><td colspan="14" class="empty">No articles match. Add one with “+ Add product”.</td></tr>`;
-  renderTargets();renderSellin();renderCompare();
+    <td><button class="x info" data-info="${x.id}" title="Details">ⓘ</button><button class="x" data-del="${x.id}" title="Delete">✕</button></td></tr>`}).join(""):`<tr><td colspan="14" class="empty">No articles match. Add one with “+ Add product”.</td></tr>`;
+  renderTargets();renderSellin();renderCompare();renderArch();renderHealth();renderScen();
 }
 $("thead").onclick=e=>{const k=e.target.dataset.k;if(!k)return;sort=sort.k===k?{k,d:-sort.d}:{k,d:1};render()};
 ["q","fCat","fGen","fRole"].forEach(id=>$(id).oninput=render);
@@ -199,6 +235,7 @@ $("newSeason").onclick=()=>{const n=(prompt("Season name (e.g. FW28)")||"").trim
   S.seasons[n]=copy?items().map(x=>({...x,id:crypto.randomUUID()})):[];S.current=n}save();render()};
 $("reset").onclick=()=>{if(confirm("Replace all data with the sample data?")){S=SAMPLE();save();render()}};
 $("tbody").onclick=e=>{
+  if(e.target.dataset.info){detail(e.target.dataset.info);return}
   const d=e.target.dataset.del;
   if(d){if(confirm("Delete this article?")){S.seasons[S.current]=items().filter(x=>x.id!==d);save();render()}return}
   const tr=e.target.closest("tr[data-id]");if(tr)open(items().find(x=>x.id===tr.dataset.id));
@@ -221,10 +258,10 @@ $("csv").onclick=()=>{
 };
 
 // ---- navigation
-let view="range";
+let view="range";const VIEWS=["range","arch","targets","sellin","scen","health","compare"];
 $("tabs").onclick=e=>{const v=e.target.dataset.v;if(!v)return;view=v;
   [...$("tabs").children].forEach(b=>b.classList.toggle("on",b.dataset.v===v));
-  ["range","targets","sellin","compare"].forEach(n=>$("v-"+n).classList.toggle("hide",n!==v));
+  VIEWS.forEach(n=>$("v-"+n).classList.toggle("hide",n!==v));
   $("add").classList.toggle("hide",v!=="range")};
 
 // ---- targets
@@ -255,6 +292,10 @@ function renderSellin(){
   $("siHead").innerHTML=`<tr><th>Article</th><th>Name</th><th class="n">Plan</th>${CUST.map(c=>`<th class="n">${c}</th>`).join("")}<th class="n">Ordered</th><th>Coverage</th></tr>`;
   $("siBody").innerHTML=all.map(x=>{const t=tot(x),c=x.units?t/x.units*100:0,cls=c<50?"m-low":c<80?"m-mid":"m-good";
     return `<tr><td>${x.article}</td><td>${x.name}</td><td class="n">${x.units.toLocaleString("en-GB")}</td>${CUST.map(cu=>`<td class="n"><input class="num" type="number" min="0" step="10" data-c="${cu}" data-a="${x.id}" value="${ord(cu,x.id)}"></td>`).join("")}<td class="n">${t.toLocaleString("en-GB")}</td><td class="${cls}"><span class="cov"><i style="width:${Math.min(c,100)}%"></i></span>${c.toFixed(0)}%</td></tr>`}).join("");
+  $("siCust").innerHTML=CUST.map(c=>{const u=all.reduce((s,x)=>s+ord(c,x.id),0),e=all.reduce((s,x)=>s+ord(c,x.id)*x.wholesale,0),co=all.reduce((s,x)=>s+ord(c,x.id)*x.cost,0);
+    const tot=all.reduce((s,x)=>s+CUST.reduce((q,cu)=>q+ord(cu,x.id)*x.wholesale,0),0);
+    const miss=all.filter(x=>(x.role==="Hero"||x.role==="Core")&&ord(c,x.id)===0);
+    return `<tr><td>${c}</td><td class="n">${u.toLocaleString("en-GB")}</td><td class="n">${eur(e)}</td><td class="n">${tot?(e/tot*100).toFixed(0):0}%</td><td class="n">${e?((e-co)/e*100).toFixed(1):"–"}%</td><td>${miss.length?miss.map(x=>x.article).join(", "):"<span class='m-good'>none</span>"}</td></tr>`}).join("");
   $("siFoot").innerHTML=`<tr><td colspan="2"><b>Total</b></td><td class="n"><b>${all.reduce((s,x)=>s+x.units,0).toLocaleString("en-GB")}</b></td>${CUST.map(c=>`<td class="n"><b>${all.reduce((s,x)=>s+ord(c,x.id),0).toLocaleString("en-GB")}</b></td>`).join("")}<td class="n"><b>${all.reduce((s,x)=>s+tot(x),0).toLocaleString("en-GB")}</b></td><td></td></tr>`;
 }
 $("siBody").onchange=e=>{const d=e.target.dataset;if(!d.c)return;
@@ -274,7 +315,108 @@ function renderCompare(){
   $("cmpBody").innerHTML=A.map(([l,va,fm],i)=>{const vb=B[i][1],d=vb-va,pct=va?d/va*100:0;
     return `<tr><td>${l}</td><td class="n">${fm(va)}</td><td class="n">${fm(vb)}</td><td class="n ${d>0?"m-good":d<0?"m-low":""}">${d>0?"+":""}${l==="Blended margin"?d.toFixed(1)+" pp":pct.toFixed(0)+"%"}</td></tr>`}).join("");
 }
-$("cmpA").onchange=$("cmpB").onchange=renderCompare;
+$("cmpA").onchange=$("cmpB").onchange=()=>renderCompare();
+const _rc=renderCompare;
+renderCompare=function(){_rc();
+  const A=S.seasons[$("cmpA").value]||[],B=S.seasons[$("cmpB").value]||[];
+  const a=new Map(A.map(x=>[x.article,x])),b=new Map(B.map(x=>[x.article,x]));
+  const li=arr=>arr.length?`<ul>${arr.map(x=>`<li>${x.article} ${x.name}</li>`).join("")}</ul>`:"<span class='note'>none</span>";
+  $("carry").innerHTML=[["Carried over",B.filter(x=>a.has(x.article))],["New in "+$("cmpB").value,B.filter(x=>!a.has(x.article))],["Dropped from "+$("cmpA").value,A.filter(x=>!b.has(x.article))]]
+   .map(([t,l])=>`<div class="card"><h3>${t} (${l.length})</h3>${li(l)}</div>`).join("")};
+
+// ---- architecture
+function renderArch(){
+  const dim=$("archDim").value,keys=dim==="category"?CATS:dim==="gender"?GENS:ROLES,all=items(),rev=all.reduce((s,x)=>s+x.wholesale*x.units,0);
+  let h=`<div class="agrid" style="grid-template-columns:110px repeat(${TIERS.length},1fr)"><span></span>${TIERS.map(t=>`<span class="h">${t}</span>`).join("")}`;
+  keys.forEach(k=>{h+=`<span class="h">${k}</span>`;TIERS.forEach(t=>{
+    const l=all.filter(x=>x[dim]===k&&x.tier===t);
+    if(!l.length){h+=`<div class="cell gap"><b>Gap</b>no articles</div>`;return}
+    const r=l.reduce((s,x)=>s+x.wholesale*x.units,0),c=l.reduce((s,x)=>s+x.cost*x.units,0),sh=rev?r/rev:0;
+    h+=`<div class="cell" style="background:rgba(31,79,216,${(.06+Math.min(sh*2.2,.5)).toFixed(2)})"><b>${l.length} art. · ${(sh*100).toFixed(0)}%</b>${eur(r)} · margin ${((r-c)/r*100).toFixed(0)}%<small>${l.map(x=>x.article).join(", ")}</small></div>`})});
+  $("archBody").innerHTML=h+"</div>";
+}
+$("archDim").onchange=renderArch;
+
+// ---- scenario
+(function(){
+  const sl=(k,l,min,max)=>`<div class="sl"><span>${l}</span><input type="range" min="${min}" max="${max}" value="0" data-sc="${k}"><b>0%</b></div>`;
+  $("scCtl").innerHTML=`<h3>Units change by role</h3>${ROLES.map(r=>sl("u:"+r,r,-50,50)).join("")}<h3 style="margin-top:14px">Wholesale price change by tier</h3>${TIERS.map(t=>sl("p:"+t,t,-15,15)).join("")}<h3 style="margin-top:14px">Cost inflation</h3>${sl("c","All costs",0,15)}<div class="row" style="margin-top:8px"><button class="ghost" id="scReset">Reset sliders</button></div>`;
+  $("scCtl").oninput=renderScen;
+  $("scReset").onclick=()=>{document.querySelectorAll("[data-sc]").forEach(i=>i.value=0);renderScen()};
+})();
+function agg(l){const rev=l.reduce((s,x)=>s+x.wholesale*x.units,0),cost=l.reduce((s,x)=>s+x.cost*x.units,0);return{rev,cost,u:l.reduce((s,x)=>s+x.units,0),gm:rev?(rev-cost)/rev*100:0}}
+function renderScen(){
+  const v={};document.querySelectorAll("[data-sc]").forEach(i=>{v[i.dataset.sc]=+i.value;i.nextElementSibling.textContent=(i.value>0?"+":"")+i.value+"%"});
+  const base=items(),sc=base.map(x=>({...x,units:Math.round(x.units*(1+(v["u:"+x.role]||0)/100)),wholesale:x.wholesale*(1+(v["p:"+x.tier]||0)/100),cost:x.cost*(1+(v.c||0)/100)}));
+  const A=agg(base),B=agg(sc),d=(a,b)=>a?((b-a)/a*100):0,cl=n=>n>0?"m-good":n<0?"m-low":"";
+  const row=(l,a,b,fa,dl)=>`<tr><td>${l}</td><td class="n">${fa(a)}</td><td class="n">${fa(b)}</td><td class="n ${cl(dl)}">${dl>0?"+":""}${fa===pp?dl.toFixed(1)+" pp":dl.toFixed(1)+"%"}</td></tr>`;
+  const pp=x=>x.toFixed(1)+"%";
+  const T=tg();
+  const mixRows=(dim,keys)=>keys.map(k=>{const sh=l=>{const r=l.reduce((s,x)=>s+x.wholesale*x.units,0),t=l.filter(x=>x[dim]===k).reduce((s,x)=>s+x.wholesale*x.units,0);return r?t/r*100:0};
+    const a=sh(base),b=sh(sc),t=+T[dim][k]||0,vv=b-t,c=Math.abs(vv)>5?"m-low":Math.abs(vv)>2?"m-mid":"m-good";
+    return `<tr><td>${k}</td><td class="n">${t}%</td><td class="n">${a.toFixed(1)}%</td><td class="n">${b.toFixed(1)}%</td><td class="n ${c}">${vv>=0?"+":""}${vv.toFixed(1)} pp</td></tr>`}).join("");
+  $("scOut").innerHTML=`<h3>Result</h3><table><thead><tr><th></th><th class="n">Plan</th><th class="n">Scenario</th><th class="n">Δ</th></tr></thead><tbody>
+    ${row("Units",A.u,B.u,x=>Math.round(x).toLocaleString("en-GB"),d(A.u,B.u))}${row("Sell-in €",A.rev,B.rev,eur,d(A.rev,B.rev))}${row("Margin",A.gm,B.gm,pp,B.gm-A.gm)}</tbody></table>
+    <h3 style="margin-top:14px">Mix vs target after scenario: category</h3><table><thead><tr><th></th><th class="n">Target</th><th class="n">Plan</th><th class="n">Scenario</th><th class="n">Var.</th></tr></thead><tbody>${mixRows("category",CATS)}</tbody></table>
+    <h3 style="margin-top:14px">Price tier</h3><table><thead><tr><th></th><th class="n">Target</th><th class="n">Plan</th><th class="n">Scenario</th><th class="n">Var.</th></tr></thead><tbody>${mixRows("tier",TIERS)}</tbody></table>`;
+}
+
+// ---- health
+function renderHealth(){
+  const all=items(),rev=all.reduce((s,x)=>s+x.wholesale*x.units,0),T=tg(),out=[];
+  const add=(sev,t,d)=>out.push({sev,t,d});
+  all.filter(x=>mar(x)<.4).forEach(x=>add("bad",`Low margin: ${x.article} ${x.name}`,`Margin ${(mar(x)*100).toFixed(0)}% (below 40%)`));
+  all.filter(x=>mar(x)>=.4&&mar(x)<.45).forEach(x=>add("warn",`Thin margin: ${x.article} ${x.name}`,`Margin ${(mar(x)*100).toFixed(0)}% (below 45%)`));
+  DIMS.forEach(([dim,title,keys])=>keys.forEach(k=>{const a=rev?all.filter(x=>x[dim]===k).reduce((s,x)=>s+x.wholesale*x.units,0)/rev*100:0,v=a-(+T[dim][k]||0);
+    if(Math.abs(v)>5)add("bad",`${title}: ${k} is ${v>0?"over":"under"} target`,`${a.toFixed(1)}% actual vs ${T[dim][k]}% target (${v>0?"+":""}${v.toFixed(1)} pp)`);
+    else if(Math.abs(v)>2)add("warn",`${title}: ${k} drifting from target`,`${v>0?"+":""}${v.toFixed(1)} pp`)}));
+  all.forEach(x=>{const o=CUST.reduce((s,c)=>s+ord(c,x.id),0),c=x.units?o/x.units:1;
+    if(c<.5)add("bad",`Weak sell-in: ${x.article} ${x.name}`,`Only ${(c*100).toFixed(0)}% of planned units ordered`)});
+  TIERS.forEach(t=>{const n=all.filter(x=>x.tier===t).length;if(all.length>=8&&n/all.length>.5)add("warn",`Tier concentration: ${t}`,`${n} of ${all.length} articles in one price tier`)});
+  const seen={};all.forEach(x=>{if(seen[x.article])add("bad",`Duplicate article number ${x.article}`,`${seen[x.article].name} and ${x.name}`);seen[x.article]=x});
+  all.filter(x=>x.retail<=x.wholesale).forEach(x=>add("bad",`Price error: ${x.article} ${x.name}`,"Retail price is not above wholesale price"));
+  all.filter(x=>x.role==="Drop"&&rev&&x.wholesale*x.units/rev>.05).forEach(x=>add("warn",`Drop article is large: ${x.article}`,"More than 5% of sell-in is in a limited drop"));
+  const bad=out.filter(o=>o.sev==="bad").length,warn=out.filter(o=>o.sev==="warn").length;
+  $("hKpis").innerHTML=[["Critical",bad],["Warnings",warn],["Articles checked",all.length]].map(([l,v])=>`<div class="card kpi"><div class="l">${l}</div><div class="v">${v}</div></div>`).join("");
+  out.sort((a,b)=>(a.sev==="bad"?0:1)-(b.sev==="bad"?0:1));
+  $("hList").innerHTML=out.length?out.map(o=>`<div class="hl"><span class="sev ${o.sev}">${o.sev==="bad"?"Critical":"Warning"}</span><div>${o.t}<small>${o.d}</small></div></div>`).join(""):`<div class="hl"><span class="sev ok">OK</span><div>No issues found<small>All checks passed for ${S.current}</small></div></div>`;
+}
+
+// ---- article detail
+function detail(id){
+  const x=items().find(a=>a.id===id);if(!x)return;
+  const o=CUST.map(c=>[c,ord(c,x.id)]),tot=o.reduce((s,r)=>s+r[1],0);
+  const sim=items().filter(a=>a.category===x.category&&a.gender===x.gender).sort((a,b)=>a.retail-b.retail);
+  $("dtl").innerHTML=`<h2>${x.article} · ${x.name}</h2>
+   <p style="margin:0 0 12px"><span class="pill ${x.role}">${x.role}</span> ${x.category} · ${x.gender} · ${x.tier} · ${x.window} delivery</p>
+   <div class="grid" style="margin-bottom:12px"><div class="card kpi"><div class="l">Margin</div><div class="v">${(mar(x)*100).toFixed(0)}%</div></div><div class="card kpi"><div class="l">Sell-in plan</div><div class="v">${eur(x.wholesale*x.units)}</div></div></div>
+   <h3 style="margin:0 0 4px;font-size:13px;color:var(--mute)">Orders by customer (${tot.toLocaleString("en-GB")} of ${x.units.toLocaleString("en-GB")} units, ${x.units?(tot/x.units*100).toFixed(0):0}%)</h3>
+   <table>${o.map(([c,u])=>`<tr><td>${c}</td><td class="n">${u.toLocaleString("en-GB")}</td></tr>`).join("")}</table>
+   <h3 style="margin:12px 0 4px;font-size:13px;color:var(--mute)">Price ladder: ${x.category}, ${x.gender}</h3>
+   <table class="ladder">${sim.map(a=>`<tr class="${a.id===x.id?"me":""}"><td>${a.article}</td><td>${a.name}</td><td class="n">${eur(a.retail)}</td></tr>`).join("")}</table>`;
+  $("dlg2").showModal();
+}
+$("dclose").onclick=()=>$("dlg2").close();
+
+// ---- CSV import
+function parseCSV(t){const rows=[];let r=[],c="",q=false;
+  for(let i=0;i<t.length;i++){const ch=t[i];
+    if(q){if(ch=='"'){if(t[i+1]=='"'){c+='"';i++}else q=false}else c+=ch}
+    else if(ch=='"')q=true;else if(ch==","||ch==";"){r.push(c);c=""}
+    else if(ch=="\n"||ch=="\r"){if(ch=="\r"&&t[i+1]=="\n")i++;r.push(c);c="";if(r.length>1||r[0]!=="")rows.push(r);r=[]}else c+=ch}
+  if(c!==""||r.length){r.push(c);rows.push(r)}return rows}
+$("imp").onclick=()=>$("impf").click();
+$("impf").onchange=async e=>{const file=e.target.files[0];if(!file)return;
+  const rows=parseCSV(await file.text()),h=rows.shift().map(x=>x.trim().toLowerCase());
+  const need=["article","name","cost","wholesale","retail","units"],miss=need.filter(k=>!h.includes(k));
+  if(miss.length){alert("Missing columns: "+miss.join(", ")+"\nExpected header like the CSV export (article,name,category,gender,role,tier,window,cost,wholesale,retail,units).");e.target.value="";return}
+  const g=(r,k)=>(r[h.indexOf(k)]||"").trim(),pick=(v,arr)=>arr.find(a=>a.toLowerCase()===v.toLowerCase())||arr[0];
+  const list=S.seasons[S.current]||(S.seasons[S.current]=[]);let n=0;
+  rows.forEach(r=>{if(!g(r,"article"))return;
+    const x={id:crypto.randomUUID(),article:g(r,"article"),name:g(r,"name"),category:pick(g(r,"category"),CATS),gender:pick(g(r,"gender"),GENS),role:pick(g(r,"role"),ROLES),tier:pick(g(r,"tier"),TIERS),window:pick(g(r,"window"),WINDOWS),
+      cost:parseFloat(g(r,"cost"))||0,wholesale:parseFloat(g(r,"wholesale"))||0,retail:parseFloat(g(r,"retail"))||0,units:parseInt(g(r,"units"))||0};
+    const i=list.findIndex(a=>a.article===x.article);if(i>=0)list[i]=x;else list.push(x);n++});
+  save();render();e.target.value="";alert(n+" articles imported into "+S.current)};
 render();
 </script>
 </body>
