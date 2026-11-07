@@ -71,34 +71,47 @@
     main{padding:12px}th,td{padding:7px 8px}.grid{grid-template-columns:1fr}.tgrid{grid-template-columns:1fr}
     .sl{grid-template-columns:80px 1fr 48px}
   }
+  .pill.s-Proposed{background:#eef0f3;color:#555}.pill.s-Inreview{background:#fff3e0;color:var(--warn)}.pill.s-Approved{background:#e6f4ec;color:var(--ok)}.pill.s-Dropped{background:#fdecea;color:var(--bad)}
+  .tbar{display:flex;height:36px;border-radius:10px;overflow:hidden;margin:4px 0 14px}
+  .tbar div{display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#fff;white-space:nowrap}
+  .wl{display:grid;grid-template-columns:70px 1fr 70px;gap:8px;align-items:center;margin:5px 0;font-size:12.5px}
+  .wl .t{height:8px;background:var(--acc2);border-radius:5px;overflow:hidden}.wl .t i{display:block;height:100%;background:var(--acc)}
+  .wl b{text-align:right}
 </style>
 </head>
 <body>
 <header>
   <h1>Range Builder</h1>
-  <nav class="tabs" id="tabs"><button data-v="range" class="on">Range</button><button data-v="arch">Architecture</button><button data-v="targets">Targets</button><button data-v="sellin">Sell-in</button><button data-v="scen">Scenario</button><button data-v="health">Health</button><button data-v="compare">Compare</button></nav>
+  <nav class="tabs" id="tabs"><button data-v="dash" class="on">Dashboard</button><button data-v="range">Range</button><button data-v="arch">Architecture</button><button data-v="targets">Targets</button><button data-v="sellin">Sell-in</button><button data-v="time">Timeline</button><button data-v="scen">Scenario</button><button data-v="health">Health</button><button data-v="compare">Compare</button></nav>
   <select id="season"></select>
   <button class="ghost" id="newSeason">+ Season</button>
   <span style="flex:1"></span>
   <button class="ghost" id="reset">Reset sample data</button>
   <button class="ghost" id="csv">Export CSV</button>
   <button class="ghost" id="imp">Import CSV</button><input type="file" id="impf" accept=".csv,text/csv" class="hide">
-  <button class="primary" id="add">+ Add product</button>
+  <button class="primary hide" id="add">+ Add product</button>
 </header>
-<main id="v-range">
+<main id="v-range" class="hide">
   <div class="kpis" id="kpis"></div>
   <div class="mix" id="mix"></div>
   <div class="toolbar">
     <input id="q" placeholder="Search article or name…" style="min-width:220px">
-    <select id="fCat"></select><select id="fGen"></select><select id="fRole"></select>
+    <select id="fCat"></select><select id="fGen"></select><select id="fRole"></select><select id="fStatus"></select>
     <span class="sp"></span><span id="count" style="color:var(--mute)"></span>
   </div>
   <div class="scroll"><table>
     <thead><tr id="thead"></tr></thead><tbody id="tbody"></tbody>
   </table></div>
-  <p class="note">Prototype: sample data, stored only in this browser (localStorage). Margin = (wholesale − cost) / wholesale.</p>
+  <p class="note">Dropped articles stay in the list but are excluded from all totals and pages. Prototype: sample data, stored only in this browser (localStorage). Margin = (wholesale − cost) / wholesale.</p>
 </main>
 
+<main id="v-dash">
+  <div class="kpis" id="dKpis"></div>
+  <div class="tgrid" id="dCards"></div>
+</main>
+<main id="v-time" class="hide">
+  <div class="card"><h3>Units by delivery window</h3><div class="tbar" id="tBar"></div><div class="tgrid" id="timeBody"></div></div>
+</main>
 <main id="v-arch" class="hide">
   <div class="toolbar"><span style="color:var(--mute)">Rows:</span><select id="archDim"><option value="category">Category</option><option value="gender">Gender / age</option><option value="role">Role</option></select><span style="color:var(--mute)">Columns: price tier. Cell shade = share of sell-in €. Dashed cells are gaps.</span></div>
   <div id="archBody"></div>
@@ -143,6 +156,8 @@
     <label>Retail price (€)<input name="retail" type="number" step="0.01" min="0" required></label>
     <label>Planned units<input name="units" type="number" step="1" min="0" required></label>
     <label>Delivery window<select name="window"></select></label>
+    <label>Status<select name="status"></select></label>
+    <label style="grid-column:1/-1">Note<input name="note" placeholder="Comment, e.g. waiting for final costing"></label>
   </div>
   <div class="row"><button type="button" class="ghost" id="cancel">Cancel</button><button class="primary" value="ok">Save</button></div>
 </form></dialog>
@@ -154,6 +169,9 @@ const ROLES=["Core","Seasonal","Hero","Drop"];
 const TIERS=["Entry","Mid","Premium"];
 const WINDOWS=["Early","Main","Late"];
 const KEY="rangeBuilder.v2";
+const STATUSES=["Proposed","In review","Approved","Dropped"];
+const st=x=>x.status||"Proposed";
+const allItems=()=>S.seasons[S.current]||[];
 const CUST=["Sport Münster","Intersport Nord","ShoeCity","Online Pure"];
 const DEFAULT_T={category:{Footwear:50,Apparel:30,Accessories:12,Equipment:8},gender:{Men:35,Women:33,Kids:7,Unisex:25},tier:{Entry:30,Mid:40,Premium:30},role:{Core:55,Seasonal:12,Hero:28,Drop:5}};
 const BASE=()=>({current:"SS27",seasons:{
@@ -182,6 +200,8 @@ function SAMPLE(){const d=BASE();d.targets={SS27:JSON.parse(JSON.stringify(DEFAU
  const shares=[.3,.3,.2,.15];
  for(const [se,list] of Object.entries(d.seasons)){d.orders[se]={};CUST.forEach((c,ci)=>{d.orders[se][c]={};
   list.forEach((x,i)=>{const cov=.45+((i*7+ci*13+se.length*5)%10)/18;d.orders[se][c][x.id]=Math.round(x.units*shares[ci]*cov/10)*10})})}
+ d.seasons.SS27.forEach((x,i)=>{x.status=i<9?"Approved":i<13?"In review":"Proposed"});
+ d.seasons.SS27[4].note="Waiting for final costing";d.seasons.SS27[10].note="Limited drop: confirm quantity with brand team";
  return d}
 function p(article,name,category,gender,role,tier,cost,wholesale,retail,units,window){return{id:crypto.randomUUID(),article,name,category,gender,role,tier,cost,wholesale,retail,units,window}}
 
@@ -193,18 +213,18 @@ const eur=n=>"€"+Number(n).toLocaleString("en-GB",{maximumFractionDigits:0});
 const mar=x=>(x.wholesale-x.cost)/x.wholesale;
 let sort={k:"article",d:1}, editing=null;
 
-const COLS=[["article","Article"],["name","Name"],["category","Category"],["gender","Gender"],["role","Role"],["tier","Tier"],["window","Window"],["cost","Cost","n"],["wholesale","Wholesale","n"],["retail","Retail","n"],["margin","Margin","n"],["units","Units","n"],["rev","Sell-in €","n"]];
-const val=(x,k)=>k==="margin"?mar(x):k==="rev"?x.wholesale*x.units:x[k];
+const COLS=[["article","Article"],["name","Name"],["category","Category"],["gender","Gender"],["role","Role"],["status","Status"],["tier","Tier"],["window","Window"],["cost","Cost","n"],["wholesale","Wholesale","n"],["retail","Retail","n"],["margin","Margin","n"],["units","Units","n"],["rev","Sell-in €","n"]];
+const val=(x,k)=>k==="margin"?mar(x):k==="rev"?x.wholesale*x.units:k==="status"?st(x):x[k];
 
 function fillSel(el,arr,all){el.innerHTML=(all?`<option value="">${all}</option>`:"")+arr.map(a=>`<option>${a}</option>`).join("")}
-fillSel($("fCat"),CATS,"All categories");fillSel($("fGen"),GENS,"All genders");fillSel($("fRole"),ROLES,"All roles");
+fillSel($("fCat"),CATS,"All categories");fillSel($("fGen"),GENS,"All genders");fillSel($("fRole"),ROLES,"All roles");fillSel($("fStatus"),STATUSES,"All statuses");
 const f=$("form");
-fillSel(f.category,CATS);fillSel(f.gender,GENS);fillSel(f.role,ROLES);fillSel(f.tier,TIERS);fillSel(f.window,WINDOWS);
+fillSel(f.category,CATS);fillSel(f.gender,GENS);fillSel(f.role,ROLES);fillSel(f.tier,TIERS);fillSel(f.window,WINDOWS);fillSel(f.status,STATUSES);
 
-function items(){return S.seasons[S.current]||[]}
+function items(){return allItems().filter(x=>st(x)!=="Dropped")}
 function filtered(){
-  const q=$("q").value.trim().toLowerCase(),c=$("fCat").value,g=$("fGen").value,r=$("fRole").value;
-  return items().filter(x=>(!q||(x.article+" "+x.name).toLowerCase().includes(q))&&(!c||x.category===c)&&(!g||x.gender===g)&&(!r||x.role===r))
+  const q=$("q").value.trim().toLowerCase(),c=$("fCat").value,g=$("fGen").value,r=$("fRole").value,sf=$("fStatus").value;
+  return items().filter(x=>(!q||(x.article+" "+x.name).toLowerCase().includes(q))&&(!c||x.category===c)&&(!g||x.gender===g)&&(!r||x.role===r)&&(!sf||st(x)===sf))
    .sort((a,b)=>{const A=val(a,sort.k),B=val(b,sort.k);return (A>B?1:A<B?-1:0)*sort.d});
 }
 function render(){
@@ -218,27 +238,27 @@ function render(){
   $("mix").innerHTML=mixOf("Category",CATS,x=>x.category)+mixOf("Gender / age",GENS,x=>x.gender)+mixOf("Price tier",TIERS,x=>x.tier)+mixOf("Role",ROLES,x=>x.role);
   $("thead").innerHTML=COLS.map(([k,l,c])=>`<th class="${c||""}" data-k="${k}">${l}${sort.k===k?(sort.d>0?" ▲":" ▼"):""}</th>`).join("")+"<th></th>";
   const rows=filtered();
-  $("count").textContent=`${rows.length} of ${all.length} articles`;
-  $("tbody").innerHTML=rows.length?rows.map(x=>{const m=mar(x);return `<tr data-id="${x.id}">
-    <td>${x.article}</td><td>${x.name}</td><td>${x.category}</td><td>${x.gender}</td><td><span class="pill ${x.role}">${x.role}</span></td><td>${x.tier}</td><td>${x.window}</td>
+  $("count").textContent=`${rows.length} of ${allItems().length} articles`;
+  $("tbody").innerHTML=rows.length?rows.map(x=>{const m=mar(x);return `<tr data-id="${x.id}" style="${st(x)==="Dropped"?"opacity:.5":""}">
+    <td>${x.article}</td><td>${x.name}${x.note?` <span title="${x.note.replace(/"/g,"&quot;")}">💬</span>`:""}</td><td>${x.category}</td><td>${x.gender}</td><td><span class="pill ${x.role}">${x.role}</span></td><td><span class="pill s-${st(x).replace(" ","")}">${st(x)}</span></td><td>${x.tier}</td><td>${x.window}</td>
     <td class="n">${eur(x.cost)}</td><td class="n">${eur(x.wholesale)}</td><td class="n">${eur(x.retail)}</td>
     <td class="n ${m>=.5?"m-good":m<.45?"m-low":""}">${(m*100).toFixed(0)}%</td>
     <td class="n">${x.units.toLocaleString("en-GB")}</td><td class="n">${eur(x.wholesale*x.units)}</td>
-    <td><button class="x info" data-info="${x.id}" title="Details">ⓘ</button><button class="x" data-del="${x.id}" title="Delete">✕</button></td></tr>`}).join(""):`<tr><td colspan="14" class="empty">No articles match. Add one with “+ Add product”.</td></tr>`;
-  renderTargets();renderSellin();renderCompare();renderArch();renderHealth();renderScen();
+    <td><button class="x info" data-info="${x.id}" title="Details">ⓘ</button><button class="x" data-del="${x.id}" title="Delete">✕</button></td></tr>`}).join(""):`<tr><td colspan="15" class="empty">No articles match. Add one with “+ Add product”.</td></tr>`;
+  renderTargets();renderSellin();renderCompare();renderArch();renderHealth();renderScen();renderDash();renderTime();
 }
 $("thead").onclick=e=>{const k=e.target.dataset.k;if(!k)return;sort=sort.k===k?{k,d:-sort.d}:{k,d:1};render()};
-["q","fCat","fGen","fRole"].forEach(id=>$(id).oninput=render);
+["q","fCat","fGen","fRole","fStatus"].forEach(id=>$(id).oninput=render);
 $("season").onchange=e=>{S.current=e.target.value;save();render()};
 $("newSeason").onclick=()=>{const n=(prompt("Season name (e.g. FW28)")||"").trim().toUpperCase();if(!n)return;
   if(S.seasons[n]){S.current=n}else{const copy=confirm(`Copy articles from ${S.current} as a starting point?\nOK = copy, Cancel = empty`);
-  S.seasons[n]=copy?items().map(x=>({...x,id:crypto.randomUUID()})):[];S.current=n}save();render()};
+  S.seasons[n]=copy?allItems().map(x=>({...x,id:crypto.randomUUID()})):[];S.current=n}save();render()};
 $("reset").onclick=()=>{if(confirm("Replace all data with the sample data?")){S=SAMPLE();save();render()}};
 $("tbody").onclick=e=>{
   if(e.target.dataset.info){detail(e.target.dataset.info);return}
   const d=e.target.dataset.del;
-  if(d){if(confirm("Delete this article?")){S.seasons[S.current]=items().filter(x=>x.id!==d);save();render()}return}
-  const tr=e.target.closest("tr[data-id]");if(tr)open(items().find(x=>x.id===tr.dataset.id));
+  if(d){if(confirm("Delete this article?")){S.seasons[S.current]=allItems().filter(x=>x.id!==d);save();render()}return}
+  const tr=e.target.closest("tr[data-id]");if(tr)open(allItems().find(x=>x.id===tr.dataset.id));
 };
 function open(x){editing=x||null;$("dlgT").textContent=x?"Edit product":"Add product";
   f.reset();if(x)for(const k of Object.keys(x))if(f[k]&&k!=="id")f[k].value=x[k];$("dlg").showModal()}
@@ -247,18 +267,18 @@ $("cancel").onclick=()=>$("dlg").close();
 f.onsubmit=e=>{
   const fd=Object.fromEntries(new FormData(f));
   ["cost","wholesale","retail","units"].forEach(k=>fd[k]=Number(fd[k]));
-  if(editing)Object.assign(editing,fd);else items().push({id:crypto.randomUUID(),...fd});
+  if(editing)Object.assign(editing,fd);else allItems().push({id:crypto.randomUUID(),...fd});
   if(!S.seasons[S.current])S.seasons[S.current]=[];
   save();render();
 };
 $("csv").onclick=()=>{
-  const h=["article","name","category","gender","role","tier","window","cost","wholesale","retail","units"];
-  const csv=[h.join(",")].concat(items().map(x=>h.map(k=>`"${String(x[k]).replace(/"/g,'""')}"`).join(","))).join("\n");
+  const h=["article","name","category","gender","role","tier","window","cost","wholesale","retail","units","status","note"];
+  const csv=[h.join(",")].concat(allItems().map(x=>h.map(k=>`"${String(x[k]).replace(/"/g,'""')}"`).join(","))).join("\n");
   const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));a.download=`range_${S.current}.csv`;a.click();
 };
 
 // ---- navigation
-let view="range";const VIEWS=["range","arch","targets","sellin","scen","health","compare"];
+let view="dash";const VIEWS=["dash","range","arch","targets","sellin","time","scen","health","compare"];
 $("tabs").onclick=e=>{const v=e.target.dataset.v;if(!v)return;view=v;
   [...$("tabs").children].forEach(b=>b.classList.toggle("on",b.dataset.v===v));
   VIEWS.forEach(n=>$("v-"+n).classList.toggle("hide",n!==v));
@@ -376,24 +396,64 @@ function renderHealth(){
   const seen={};all.forEach(x=>{if(seen[x.article])add("bad",`Duplicate article number ${x.article}`,`${seen[x.article].name} and ${x.name}`);seen[x.article]=x});
   all.filter(x=>x.retail<=x.wholesale).forEach(x=>add("bad",`Price error: ${x.article} ${x.name}`,"Retail price is not above wholesale price"));
   all.filter(x=>x.role==="Drop"&&rev&&x.wholesale*x.units/rev>.05).forEach(x=>add("warn",`Drop article is large: ${x.article}`,"More than 5% of sell-in is in a limited drop"));
+  const openN=all.filter(x=>st(x)!=="Approved").length;if(openN)add("warn",`${openN} articles not yet approved`,"Status is Proposed or In review");
   const bad=out.filter(o=>o.sev==="bad").length,warn=out.filter(o=>o.sev==="warn").length;
   $("hKpis").innerHTML=[["Critical",bad],["Warnings",warn],["Articles checked",all.length]].map(([l,v])=>`<div class="card kpi"><div class="l">${l}</div><div class="v">${v}</div></div>`).join("");
-  out.sort((a,b)=>(a.sev==="bad"?0:1)-(b.sev==="bad"?0:1));
+  out.sort((a,b)=>(a.sev==="bad"?0:1)-(b.sev==="bad"?0:1));window._issues=out;
   $("hList").innerHTML=out.length?out.map(o=>`<div class="hl"><span class="sev ${o.sev}">${o.sev==="bad"?"Critical":"Warning"}</span><div>${o.t}<small>${o.d}</small></div></div>`).join(""):`<div class="hl"><span class="sev ok">OK</span><div>No issues found<small>All checks passed for ${S.current}</small></div></div>`;
 }
 
+// ---- dashboard
+function renderDash(){
+  const all=items(),ai=allItems(),A=agg(all),iss=window._issues||[],bad=iss.filter(o=>o.sev==="bad").length;
+  const got=all.reduce((s,x)=>s+x.wholesale*CUST.reduce((q,c)=>q+ord(c,x.id),0),0),appr=ai.filter(x=>st(x)==="Approved").length;
+  $("dKpis").innerHTML=[["Season",S.current],["Sell-in plan",eur(A.rev)],["Order coverage",(A.rev?got/A.rev*100:0).toFixed(0)+"%"],["Margin",A.gm.toFixed(1)+"%"],["Approved",appr+" / "+ai.length],["Critical issues",bad]]
+    .map(([l,v])=>`<div class="card kpi"><div class="l">${l}</div><div class="v">${v}</div></div>`).join("");
+  const T=tg(),catRows=CATS.map(k=>{const a=A.rev?all.filter(x=>x.category===k).reduce((s,x)=>s+x.wholesale*x.units,0)/A.rev*100:0,t=+T.category[k]||0,v=a-t,c=Math.abs(v)>5?"m-low":Math.abs(v)>2?"m-mid":"m-good";
+    return `<div class="bar"><span>${k}</span><span class="t"><i style="width:${a}%"></i></span><b class="${c}">${v>=0?"+":""}${v.toFixed(1)}</b></div>`}).join("");
+  const pipe=STATUSES.map(z=>{const n=ai.filter(x=>st(x)===z).length;return `<div class="bar"><span>${z}</span><span class="t"><i style="width:${ai.length?n/ai.length*100:0}%"></i></span><b>${n}</b></div>`}).join("");
+  const top=[...all].sort((a,b)=>b.wholesale*b.units-a.wholesale*a.units).slice(0,5),mx=top[0]?top[0].wholesale*top[0].units:1;
+  const topH=top.map(x=>`<div class="bar" title="${x.name}"><span>${x.article}</span><span class="t"><i style="width:${x.wholesale*x.units/mx*100}%"></i></span><b>${eur(x.wholesale*x.units/1000)}k</b></div>`).join("");
+  const al=iss.slice(0,4).map(o=>`<div class="hl"><span class="sev ${o.sev}">${o.sev==="bad"?"Critical":"Warning"}</span><div>${o.t}<small>${o.d}</small></div></div>`).join("")||`<div class="hl"><span class="sev ok">OK</span><div>No issues found</div></div>`;
+  $("dCards").innerHTML=`<div class="card"><h3>Approval pipeline (articles)</h3>${pipe}</div>
+    <div class="card"><h3>Top alerts <a href="#" data-go="health" style="float:right;font-weight:400">all</a></h3>${al}</div>
+    <div class="card"><h3>Category mix: variance to target (pp)</h3>${catRows}</div>
+    <div class="card"><h3>Top 5 articles by sell-in</h3>${topH}</div>`;
+}
+$("dCards").onclick=e=>{if(e.target.dataset.go){e.preventDefault();document.querySelector(`[data-v=${e.target.dataset.go}]`).click()}};
+
+// ---- timeline
+const WIN_DEF={Early:40000,Main:125000,Late:40000},WCOL=["#1f4fd8","#6b8ff0","#a9bdf6"];
+function renderTime(){
+  const all=items();S.cap=S.cap||{...WIN_DEF};
+  const tot=all.reduce((s,x)=>s+x.units,0)||1;
+  const per=WINDOWS.map(w=>{const l=all.filter(x=>x.window===w),a=agg(l);return{w,l,a,o:l.reduce((s,x)=>s+CUST.reduce((q,c)=>q+ord(c,x.id),0),0)}});
+  $("tBar").innerHTML=per.map((p,i)=>`<div style="width:${p.a.u/tot*100}%;background:${WCOL[i]};${i===2?"color:#14171c":""}">${p.w} ${(p.a.u/tot*100).toFixed(0)}%</div>`).join("");
+  $("timeBody").innerHTML=per.map(p=>{const cap=+S.cap[p.w]||0,ut=cap?p.a.u/cap*100:0,cls=ut>100?"m-low":ut>85?"m-mid":"m-good";
+    const mx=Math.max(1,...p.l.map(x=>x.wholesale*x.units)),list=[...p.l].sort((a,b)=>b.wholesale*b.units-a.wholesale*a.units).map(x=>`<div class="wl" title="${x.name}"><span>${x.article}</span><span class="t"><i style="width:${x.wholesale*x.units/mx*100}%"></i></span><b>${eur(x.wholesale*x.units/1000)}k</b></div>`).join("");
+    return `<div class="card"><h3>${p.w} window · ${p.l.length} articles</h3>
+      <table><tr><td>Units</td><td class="n">${p.a.u.toLocaleString("en-GB")}</td></tr><tr><td>Sell-in €</td><td class="n">${eur(p.a.rev)}</td></tr><tr><td>Margin</td><td class="n">${p.a.gm.toFixed(1)}%</td></tr>
+      <tr><td>Ordered</td><td class="n">${p.a.u?(p.o/p.a.u*100).toFixed(0):0}%</td></tr>
+      <tr><td>Capacity (units)</td><td class="n"><input class="num" type="number" min="0" step="1000" data-w="${p.w}" value="${cap}"></td></tr>
+      <tr><td>Utilisation</td><td class="n ${cls}">${ut.toFixed(0)}%${ut>100?" over capacity":""}</td></tr></table>
+      <h3 style="margin-top:12px">Articles by sell-in</h3>${list||"<span class='note'>none</span>"}</div>`}).join("");
+}
+$("timeBody").onchange=e=>{const w=e.target.dataset.w;if(!w)return;S.cap[w]=Number(e.target.value)||0;save();renderTime()};
+
 // ---- article detail
 function detail(id){
-  const x=items().find(a=>a.id===id);if(!x)return;
+  const x=allItems().find(a=>a.id===id);if(!x)return;
   const o=CUST.map(c=>[c,ord(c,x.id)]),tot=o.reduce((s,r)=>s+r[1],0);
   const sim=items().filter(a=>a.category===x.category&&a.gender===x.gender).sort((a,b)=>a.retail-b.retail);
   $("dtl").innerHTML=`<h2>${x.article} · ${x.name}</h2>
    <p style="margin:0 0 12px"><span class="pill ${x.role}">${x.role}</span> ${x.category} · ${x.gender} · ${x.tier} · ${x.window} delivery</p>
+   <div class="grid" style="margin-bottom:12px"><label>Status<select id="dSt">${STATUSES.map(z=>`<option ${z===st(x)?"selected":""}>${z}</option>`).join("")}</select></label><label>Note<input id="dNote" value="${(x.note||"").replace(/"/g,"&quot;")}"></label></div>
    <div class="grid" style="margin-bottom:12px"><div class="card kpi"><div class="l">Margin</div><div class="v">${(mar(x)*100).toFixed(0)}%</div></div><div class="card kpi"><div class="l">Sell-in plan</div><div class="v">${eur(x.wholesale*x.units)}</div></div></div>
    <h3 style="margin:0 0 4px;font-size:13px;color:var(--mute)">Orders by customer (${tot.toLocaleString("en-GB")} of ${x.units.toLocaleString("en-GB")} units, ${x.units?(tot/x.units*100).toFixed(0):0}%)</h3>
    <table>${o.map(([c,u])=>`<tr><td>${c}</td><td class="n">${u.toLocaleString("en-GB")}</td></tr>`).join("")}</table>
    <h3 style="margin:12px 0 4px;font-size:13px;color:var(--mute)">Price ladder: ${x.category}, ${x.gender}</h3>
    <table class="ladder">${sim.map(a=>`<tr class="${a.id===x.id?"me":""}"><td>${a.article}</td><td>${a.name}</td><td class="n">${eur(a.retail)}</td></tr>`).join("")}</table>`;
+  $("dSt").onchange=e=>{x.status=e.target.value;save();render()};$("dNote").onchange=e=>{x.note=e.target.value;save();render()};
   $("dlg2").showModal();
 }
 $("dclose").onclick=()=>$("dlg2").close();
@@ -414,8 +474,8 @@ $("impf").onchange=async e=>{const file=e.target.files[0];if(!file)return;
   const list=S.seasons[S.current]||(S.seasons[S.current]=[]);let n=0;
   rows.forEach(r=>{if(!g(r,"article"))return;
     const x={id:crypto.randomUUID(),article:g(r,"article"),name:g(r,"name"),category:pick(g(r,"category"),CATS),gender:pick(g(r,"gender"),GENS),role:pick(g(r,"role"),ROLES),tier:pick(g(r,"tier"),TIERS),window:pick(g(r,"window"),WINDOWS),
-      cost:parseFloat(g(r,"cost"))||0,wholesale:parseFloat(g(r,"wholesale"))||0,retail:parseFloat(g(r,"retail"))||0,units:parseInt(g(r,"units"))||0};
-    const i=list.findIndex(a=>a.article===x.article);if(i>=0)list[i]=x;else list.push(x);n++});
+      cost:parseFloat(g(r,"cost"))||0,wholesale:parseFloat(g(r,"wholesale"))||0,retail:parseFloat(g(r,"retail"))||0,units:parseInt(g(r,"units"))||0,status:pick(g(r,"status"),STATUSES),note:g(r,"note")};
+    const i=list.findIndex(a=>a.article===x.article);if(i>=0){x.id=list[i].id;list[i]=x}else list.push(x);n++});
   save();render();e.target.value="";alert(n+" articles imported into "+S.current)};
 render();
 </script>
