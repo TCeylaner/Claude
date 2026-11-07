@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Range Builder</title>
+<style>
+  :root{--bg:#f6f7f9;--card:#fff;--ink:#14171c;--mute:#6a7280;--line:#e3e6eb;--acc:#1f4fd8;--acc2:#e8eefc;--ok:#1a7f4b;--warn:#b45309;--bad:#b42318}
+  *{box-sizing:border-box}
+  body{margin:0;font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink)}
+  header{display:flex;align-items:center;gap:16px;padding:14px 24px;background:var(--card);border-bottom:1px solid var(--line);flex-wrap:wrap}
+  header h1{font-size:18px;margin:0 8px 0 0}
+  select,input,button{font:inherit;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink)}
+  button{cursor:pointer}button.primary{background:var(--acc);color:#fff;border-color:var(--acc)}
+  button.ghost{background:transparent}button:hover{filter:brightness(.97)}
+  main{padding:20px 24px;max-width:1280px;margin:auto}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:16px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+  .kpi .l{color:var(--mute);font-size:12px}.kpi .v{font-size:24px;font-weight:650;margin-top:2px}
+  .mix{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin-bottom:16px}
+  .mix h3{margin:0 0 10px;font-size:13px;color:var(--mute);font-weight:600}
+  .bar{display:grid;grid-template-columns:90px 1fr 54px;gap:8px;align-items:center;margin:6px 0;font-size:12.5px}
+  .bar .t{height:10px;background:var(--acc2);border-radius:6px;overflow:hidden}.bar .t i{display:block;height:100%;background:var(--acc)}
+  .bar b{text-align:right;font-weight:600}
+  .toolbar{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center}
+  .toolbar .sp{flex:1}
+  table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  th,td{padding:9px 12px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
+  th{font-size:12px;color:var(--mute);background:#fafbfc;cursor:pointer;user-select:none}
+  td.n,th.n{text-align:right}tr:last-child td{border-bottom:0}
+  tr:hover td{background:#fafbff}
+  .pill{display:inline-block;padding:2px 9px;border-radius:99px;font-size:12px;background:var(--acc2);color:var(--acc)}
+  .pill.Core{background:#e6f4ec;color:var(--ok)}.pill.Seasonal{background:#fff3e0;color:var(--warn)}.pill.Hero{background:#e8eefc;color:var(--acc)}.pill.Drop{background:#fdecea;color:var(--bad)}
+  .m-good{color:var(--ok);font-weight:600}.m-low{color:var(--bad);font-weight:600}
+  dialog{border:0;border-radius:14px;padding:20px 22px;width:min(520px,94vw);box-shadow:0 20px 60px rgba(0,0,0,.25)}
+  dialog::backdrop{background:rgba(10,15,30,.4)}
+  dialog h2{margin:0 0 12px;font-size:16px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  label{display:block;font-size:12px;color:var(--mute)}label input,label select{width:100%;margin-top:3px}
+  .row{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
+  .empty{padding:40px;text-align:center;color:var(--mute)}
+  .x{color:var(--bad);border:0;background:none;padding:2px 6px}
+  .scroll{overflow-x:auto;border-radius:12px}
+  .note{color:var(--mute);font-size:12px;margin-top:10px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Range Builder</h1>
+  <select id="season"></select>
+  <button class="ghost" id="newSeason">+ Season</button>
+  <span style="flex:1"></span>
+  <button class="ghost" id="reset">Reset sample data</button>
+  <button class="ghost" id="csv">Export CSV</button>
+  <button class="primary" id="add">+ Add product</button>
+</header>
+<main>
+  <div class="kpis" id="kpis"></div>
+  <div class="mix" id="mix"></div>
+  <div class="toolbar">
+    <input id="q" placeholder="Search article or name…" style="min-width:220px">
+    <select id="fCat"></select><select id="fGen"></select><select id="fRole"></select>
+    <span class="sp"></span><span id="count" style="color:var(--mute)"></span>
+  </div>
+  <div class="scroll"><table>
+    <thead><tr id="thead"></tr></thead><tbody id="tbody"></tbody>
+  </table></div>
+  <p class="note">Prototype: sample data, stored only in this browser (localStorage). Margin = (wholesale − cost) / wholesale.</p>
+</main>
+
+<dialog id="dlg"><form method="dialog" id="form">
+  <h2 id="dlgT">Add product</h2>
+  <div class="grid">
+    <label>Article no.<input name="article" required></label>
+    <label>Name<input name="name" required></label>
+    <label>Category<select name="category"></select></label>
+    <label>Gender / age<select name="gender"></select></label>
+    <label>Role in range<select name="role"></select></label>
+    <label>Price tier<select name="tier"></select></label>
+    <label>Cost (€)<input name="cost" type="number" step="0.01" min="0" required></label>
+    <label>Wholesale price (€)<input name="wholesale" type="number" step="0.01" min="0" required></label>
+    <label>Retail price (€)<input name="retail" type="number" step="0.01" min="0" required></label>
+    <label>Planned units<input name="units" type="number" step="1" min="0" required></label>
+    <label>Delivery window<select name="window"></select></label>
+  </div>
+  <div class="row"><button type="button" class="ghost" id="cancel">Cancel</button><button class="primary" value="ok">Save</button></div>
+</form></dialog>
+
+<script>
+const CATS=["Footwear","Apparel","Accessories","Equipment"];
+const GENS=["Men","Women","Kids","Unisex"];
+const ROLES=["Core","Seasonal","Hero","Drop"];
+const TIERS=["Entry","Mid","Premium"];
+const WINDOWS=["Early","Main","Late"];
+const KEY="rangeBuilder.v1";
+const SAMPLE=()=>({current:"SS27",seasons:{
+ SS27:[
+  p("IH1001","Court Classic Low","Footwear","Men","Core","Mid",32,70,100,12000,"Main"),
+  p("IH1002","Court Classic Low W","Footwear","Women","Core","Mid",32,70,100,9000,"Main"),
+  p("IH1003","Runner Pro 5","Footwear","Men","Hero","Premium",46,110,160,6500,"Early"),
+  p("IH1004","Runner Pro 5 W","Footwear","Women","Hero","Premium",46,110,160,5200,"Early"),
+  p("IH1005","Street Slide","Footwear","Unisex","Seasonal","Entry",12,28,40,8000,"Late"),
+  p("IH1006","Kids Trainer Velcro","Footwear","Kids","Core","Entry",14,30,45,7000,"Main"),
+  p("IH2001","Essential Tee","Apparel","Men","Core","Entry",6,15,25,25000,"Main"),
+  p("IH2002","Essential Tee W","Apparel","Women","Core","Entry",6,15,25,22000,"Main"),
+  p("IH2003","Training Jacket","Apparel","Men","Seasonal","Mid",21,52,80,4800,"Early"),
+  p("IH2004","Seamless Legging","Apparel","Women","Hero","Mid",15,40,65,9500,"Early"),
+  p("IH2005","Heritage Track Top","Apparel","Unisex","Drop","Premium",30,75,120,1800,"Late"),
+  p("IH3001","Club Backpack","Accessories","Unisex","Core","Mid",10,24,40,11000,"Main"),
+  p("IH3002","Crew Socks 3pk","Accessories","Unisex","Core","Entry",3,8,14,40000,"Main"),
+  p("IH4001","Match Ball Pro","Equipment","Unisex","Hero","Premium",28,62,100,3500,"Early"),
+  p("IH4002","Training Ball","Equipment","Unisex","Core","Entry",7,17,28,9000,"Main")
+ ],
+ FW27:[
+  p("JA1001","Winter Runner GTX","Footwear","Men","Seasonal","Premium",52,125,180,3200,"Early"),
+  p("JA2001","Puffer Jacket","Apparel","Women","Hero","Premium",48,115,170,2800,"Early")
+ ]}});
+function p(article,name,category,gender,role,tier,cost,wholesale,retail,units,window){return{id:crypto.randomUUID(),article,name,category,gender,role,tier,cost,wholesale,retail,units,window}}
+
+let S; try{S=JSON.parse(localStorage.getItem(KEY))}catch(e){}
+if(!S||!S.seasons)S=SAMPLE();
+const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}};
+const $=id=>document.getElementById(id);
+const eur=n=>"€"+Number(n).toLocaleString("en-GB",{maximumFractionDigits:0});
+const mar=x=>(x.wholesale-x.cost)/x.wholesale;
+let sort={k:"article",d:1}, editing=null;
+
+const COLS=[["article","Article"],["name","Name"],["category","Category"],["gender","Gender"],["role","Role"],["tier","Tier"],["window","Window"],["cost","Cost","n"],["wholesale","Wholesale","n"],["retail","Retail","n"],["margin","Margin","n"],["units","Units","n"],["rev","Sell-in €","n"]];
+const val=(x,k)=>k==="margin"?mar(x):k==="rev"?x.wholesale*x.units:x[k];
+
+function fillSel(el,arr,all){el.innerHTML=(all?`<option value="">${all}</option>`:"")+arr.map(a=>`<option>${a}</option>`).join("")}
+fillSel($("fCat"),CATS,"All categories");fillSel($("fGen"),GENS,"All genders");fillSel($("fRole"),ROLES,"All roles");
+const f=$("form");
+fillSel(f.category,CATS);fillSel(f.gender,GENS);fillSel(f.role,ROLES);fillSel(f.tier,TIERS);fillSel(f.window,WINDOWS);
+
+function items(){return S.seasons[S.current]||[]}
+function filtered(){
+  const q=$("q").value.trim().toLowerCase(),c=$("fCat").value,g=$("fGen").value,r=$("fRole").value;
+  return items().filter(x=>(!q||(x.article+" "+x.name).toLowerCase().includes(q))&&(!c||x.category===c)&&(!g||x.gender===g)&&(!r||x.role===r))
+   .sort((a,b)=>{const A=val(a,sort.k),B=val(b,sort.k);return (A>B?1:A<B?-1:0)*sort.d});
+}
+function render(){
+  $("season").innerHTML=Object.keys(S.seasons).map(s=>`<option ${s===S.current?"selected":""}>${s}</option>`).join("");
+  const all=items(),rev=all.reduce((s,x)=>s+x.wholesale*x.units,0),units=all.reduce((s,x)=>s+x.units,0);
+  const cost=all.reduce((s,x)=>s+x.cost*x.units,0),gm=rev?(rev-cost)/rev:0;
+  $("kpis").innerHTML=[["Articles",all.length],["Planned units",units.toLocaleString("en-GB")],["Sell-in value",eur(rev)],["Blended margin",(gm*100).toFixed(1)+"%"],["Avg wholesale",units?eur(rev/units):"–"]]
+   .map(([l,v])=>`<div class="card kpi"><div class="l">${l}</div><div class="v">${v}</div></div>`).join("");
+  const mixOf=(title,keys,fn)=>{const m=Object.fromEntries(keys.map(k=>[k,0]));all.forEach(x=>m[fn(x)]+=x.wholesale*x.units);
+    return `<div class="card"><h3>${title} (share of sell-in €)</h3>${keys.map(k=>{const s=rev?m[k]/rev*100:0;return `<div class="bar"><span>${k}</span><span class="t"><i style="width:${s}%"></i></span><b>${s.toFixed(0)}%</b></div>`}).join("")}</div>`};
+  $("mix").innerHTML=mixOf("Category",CATS,x=>x.category)+mixOf("Gender / age",GENS,x=>x.gender)+mixOf("Price tier",TIERS,x=>x.tier)+mixOf("Role",ROLES,x=>x.role);
+  $("thead").innerHTML=COLS.map(([k,l,c])=>`<th class="${c||""}" data-k="${k}">${l}${sort.k===k?(sort.d>0?" ▲":" ▼"):""}</th>`).join("")+"<th></th>";
+  const rows=filtered();
+  $("count").textContent=`${rows.length} of ${all.length} articles`;
+  $("tbody").innerHTML=rows.length?rows.map(x=>{const m=mar(x);return `<tr data-id="${x.id}">
+    <td>${x.article}</td><td>${x.name}</td><td>${x.category}</td><td>${x.gender}</td><td><span class="pill ${x.role}">${x.role}</span></td><td>${x.tier}</td><td>${x.window}</td>
+    <td class="n">${eur(x.cost)}</td><td class="n">${eur(x.wholesale)}</td><td class="n">${eur(x.retail)}</td>
+    <td class="n ${m>=.5?"m-good":m<.45?"m-low":""}">${(m*100).toFixed(0)}%</td>
+    <td class="n">${x.units.toLocaleString("en-GB")}</td><td class="n">${eur(x.wholesale*x.units)}</td>
+    <td><button class="x" data-del="${x.id}" title="Delete">✕</button></td></tr>`}).join(""):`<tr><td colspan="14" class="empty">No articles match. Add one with “+ Add product”.</td></tr>`;
+}
+$("thead").onclick=e=>{const k=e.target.dataset.k;if(!k)return;sort=sort.k===k?{k,d:-sort.d}:{k,d:1};render()};
+["q","fCat","fGen","fRole"].forEach(id=>$(id).oninput=render);
+$("season").onchange=e=>{S.current=e.target.value;save();render()};
+$("newSeason").onclick=()=>{const n=(prompt("Season name (e.g. FW28)")||"").trim().toUpperCase();if(!n)return;
+  if(S.seasons[n]){S.current=n}else{const copy=confirm(`Copy articles from ${S.current} as a starting point?\nOK = copy, Cancel = empty`);
+  S.seasons[n]=copy?items().map(x=>({...x,id:crypto.randomUUID()})):[];S.current=n}save();render()};
+$("reset").onclick=()=>{if(confirm("Replace all data with the sample data?")){S=SAMPLE();save();render()}};
+$("tbody").onclick=e=>{
+  const d=e.target.dataset.del;
+  if(d){if(confirm("Delete this article?")){S.seasons[S.current]=items().filter(x=>x.id!==d);save();render()}return}
+  const tr=e.target.closest("tr[data-id]");if(tr)open(items().find(x=>x.id===tr.dataset.id));
+};
+function open(x){editing=x||null;$("dlgT").textContent=x?"Edit product":"Add product";
+  f.reset();if(x)for(const k of Object.keys(x))if(f[k]&&k!=="id")f[k].value=x[k];$("dlg").showModal()}
+$("add").onclick=()=>open(null);
+$("cancel").onclick=()=>$("dlg").close();
+f.onsubmit=e=>{
+  const fd=Object.fromEntries(new FormData(f));
+  ["cost","wholesale","retail","units"].forEach(k=>fd[k]=Number(fd[k]));
+  if(editing)Object.assign(editing,fd);else items().push({id:crypto.randomUUID(),...fd});
+  if(!S.seasons[S.current])S.seasons[S.current]=[];
+  save();render();
+};
+$("csv").onclick=()=>{
+  const h=["article","name","category","gender","role","tier","window","cost","wholesale","retail","units"];
+  const csv=[h.join(",")].concat(items().map(x=>h.map(k=>`"${String(x[k]).replace(/"/g,'""')}"`).join(","))).join("\n");
+  const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));a.download=`range_${S.current}.csv`;a.click();
+};
+render();
+</script>
+</body>
+</html>
