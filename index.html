@@ -42,11 +42,22 @@
   .x{color:var(--bad);border:0;background:none;padding:2px 6px}
   .scroll{overflow-x:auto;border-radius:12px}
   .note{color:var(--mute);font-size:12px;margin-top:10px}
+  .tabs{display:flex;gap:4px;margin-left:8px}
+  .tabs button{border:0;background:transparent;padding:7px 12px;border-radius:8px;color:var(--mute);font-weight:600}
+  .tabs button.on{background:var(--acc2);color:var(--acc)}
+  .tgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));gap:12px}
+  .card table{border:0;border-radius:0}.card h3{margin:0 0 8px;font-size:13px;color:var(--mute);font-weight:600}
+  .card th{cursor:default}td input.num{width:78px;text-align:right;padding:4px 6px}
+  .cov{display:inline-block;width:70px;height:8px;background:var(--acc2);border-radius:5px;overflow:hidden;vertical-align:middle;margin-right:6px}
+  .cov i{display:block;height:100%;background:var(--acc)}
+  .hide{display:none!important}
+  .m-mid{color:var(--warn);font-weight:600}
 </style>
 </head>
 <body>
 <header>
   <h1>Range Builder</h1>
+  <nav class="tabs" id="tabs"><button data-v="range" class="on">Range</button><button data-v="targets">Targets</button><button data-v="sellin">Sell-in</button><button data-v="compare">Compare</button></nav>
   <select id="season"></select>
   <button class="ghost" id="newSeason">+ Season</button>
   <span style="flex:1"></span>
@@ -54,7 +65,7 @@
   <button class="ghost" id="csv">Export CSV</button>
   <button class="primary" id="add">+ Add product</button>
 </header>
-<main>
+<main id="v-range">
   <div class="kpis" id="kpis"></div>
   <div class="mix" id="mix"></div>
   <div class="toolbar">
@@ -66,6 +77,20 @@
     <thead><tr id="thead"></tr></thead><tbody id="tbody"></tbody>
   </table></div>
   <p class="note">Prototype: sample data, stored only in this browser (localStorage). Margin = (wholesale − cost) / wholesale.</p>
+</main>
+
+<main id="v-targets" class="hide">
+  <p class="note" style="margin:0 0 12px">Set your target mix (% of sell-in €) per dimension. Variance = actual − target in percentage points; red where the gap is more than 5 pp.</p>
+  <div class="tgrid" id="tgBody"></div>
+</main>
+<main id="v-sellin" class="hide">
+  <div class="kpis" id="siKpis"></div>
+  <p class="note" style="margin:0 0 10px">Enter ordered units per customer. Coverage = total ordered ÷ planned units.</p>
+  <div class="scroll"><table><thead id="siHead"></thead><tbody id="siBody"></tbody><tfoot id="siFoot"></tfoot></table></div>
+</main>
+<main id="v-compare" class="hide">
+  <div class="toolbar"><select id="cmpA"></select><span>vs</span><select id="cmpB"></select></div>
+  <div class="scroll"><table><thead><tr><th>Metric</th><th class="n" id="cA"></th><th class="n" id="cB"></th><th class="n">Δ</th></tr></thead><tbody id="cmpBody"></tbody></table></div>
 </main>
 
 <dialog id="dlg"><form method="dialog" id="form">
@@ -92,8 +117,10 @@ const GENS=["Men","Women","Kids","Unisex"];
 const ROLES=["Core","Seasonal","Hero","Drop"];
 const TIERS=["Entry","Mid","Premium"];
 const WINDOWS=["Early","Main","Late"];
-const KEY="rangeBuilder.v1";
-const SAMPLE=()=>({current:"SS27",seasons:{
+const KEY="rangeBuilder.v2";
+const CUST=["Sport Münster","Intersport Nord","ShoeCity","Online Pure"];
+const DEFAULT_T={category:{Footwear:50,Apparel:30,Accessories:12,Equipment:8},gender:{Men:35,Women:33,Kids:7,Unisex:25},tier:{Entry:30,Mid:40,Premium:30},role:{Core:55,Seasonal:12,Hero:28,Drop:5}};
+const BASE=()=>({current:"SS27",seasons:{
  SS27:[
   p("IH1001","Court Classic Low","Footwear","Men","Core","Mid",32,70,100,12000,"Main"),
   p("IH1002","Court Classic Low W","Footwear","Women","Core","Mid",32,70,100,9000,"Main"),
@@ -115,10 +142,15 @@ const SAMPLE=()=>({current:"SS27",seasons:{
   p("JA1001","Winter Runner GTX","Footwear","Men","Seasonal","Premium",52,125,180,3200,"Early"),
   p("JA2001","Puffer Jacket","Apparel","Women","Hero","Premium",48,115,170,2800,"Early")
  ]}});
+function SAMPLE(){const d=BASE();d.targets={SS27:JSON.parse(JSON.stringify(DEFAULT_T))};d.orders={};
+ const shares=[.3,.3,.2,.15];
+ for(const [se,list] of Object.entries(d.seasons)){d.orders[se]={};CUST.forEach((c,ci)=>{d.orders[se][c]={};
+  list.forEach((x,i)=>{const cov=.45+((i*7+ci*13+se.length*5)%10)/18;d.orders[se][c][x.id]=Math.round(x.units*shares[ci]*cov/10)*10})})}
+ return d}
 function p(article,name,category,gender,role,tier,cost,wholesale,retail,units,window){return{id:crypto.randomUUID(),article,name,category,gender,role,tier,cost,wholesale,retail,units,window}}
 
 let S; try{S=JSON.parse(localStorage.getItem(KEY))}catch(e){}
-if(!S||!S.seasons)S=SAMPLE();
+if(!S||!S.seasons||!S.orders||!S.targets)S=SAMPLE();
 const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}};
 const $=id=>document.getElementById(id);
 const eur=n=>"€"+Number(n).toLocaleString("en-GB",{maximumFractionDigits:0});
@@ -157,6 +189,7 @@ function render(){
     <td class="n ${m>=.5?"m-good":m<.45?"m-low":""}">${(m*100).toFixed(0)}%</td>
     <td class="n">${x.units.toLocaleString("en-GB")}</td><td class="n">${eur(x.wholesale*x.units)}</td>
     <td><button class="x" data-del="${x.id}" title="Delete">✕</button></td></tr>`}).join(""):`<tr><td colspan="14" class="empty">No articles match. Add one with “+ Add product”.</td></tr>`;
+  renderTargets();renderSellin();renderCompare();
 }
 $("thead").onclick=e=>{const k=e.target.dataset.k;if(!k)return;sort=sort.k===k?{k,d:-sort.d}:{k,d:1};render()};
 ["q","fCat","fGen","fRole"].forEach(id=>$(id).oninput=render);
@@ -186,6 +219,62 @@ $("csv").onclick=()=>{
   const csv=[h.join(",")].concat(items().map(x=>h.map(k=>`"${String(x[k]).replace(/"/g,'""')}"`).join(","))).join("\n");
   const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));a.download=`range_${S.current}.csv`;a.click();
 };
+
+// ---- navigation
+let view="range";
+$("tabs").onclick=e=>{const v=e.target.dataset.v;if(!v)return;view=v;
+  [...$("tabs").children].forEach(b=>b.classList.toggle("on",b.dataset.v===v));
+  ["range","targets","sellin","compare"].forEach(n=>$("v-"+n).classList.toggle("hide",n!==v));
+  $("add").classList.toggle("hide",v!=="range")};
+
+// ---- targets
+const DIMS=[["category","Category",CATS],["gender","Gender / age",GENS],["tier","Price tier",TIERS],["role","Role",ROLES]];
+function tg(){return S.targets[S.current]||(S.targets[S.current]=JSON.parse(JSON.stringify(DEFAULT_T)))}
+function renderTargets(){
+  const all=items(),rev=all.reduce((s,x)=>s+x.wholesale*x.units,0),T=tg();
+  $("tgBody").innerHTML=DIMS.map(([dim,title,keys])=>{
+    const act=Object.fromEntries(keys.map(k=>[k,0]));all.forEach(x=>act[x[dim]]+=x.wholesale*x.units);
+    const tsum=keys.reduce((s,k)=>s+(+T[dim][k]||0),0);
+    const rows=keys.map(k=>{const a=rev?act[k]/rev*100:0,t=+T[dim][k]||0,v=a-t;
+      const cls=Math.abs(v)>5?"m-low":Math.abs(v)>2?"m-mid":"m-good";
+      return `<tr><td>${k}</td><td class="n"><input class="num" type="number" min="0" max="100" step="1" data-dim="${dim}" data-k="${k}" value="${t}"> %</td><td class="n">${a.toFixed(1)}%</td><td class="n ${cls}">${v>=0?"+":""}${v.toFixed(1)} pp</td></tr>`}).join("");
+    return `<div class="card"><h3>${title}${tsum!==100?` <span class="m-low">· targets sum to ${tsum}%, not 100%</span>`:""}</h3>
+      <table><thead><tr><th>Segment</th><th class="n">Target</th><th class="n">Actual</th><th class="n">Variance</th></tr></thead><tbody>${rows}</tbody></table></div>`}).join("");
+}
+$("tgBody").onchange=e=>{const d=e.target.dataset;if(!d.dim)return;tg()[d.dim][d.k]=Number(e.target.value)||0;save();renderTargets()};
+
+// ---- sell-in
+const ord=(c,id)=>((S.orders[S.current]||{})[c]||{})[id]||0;
+function renderSellin(){
+  const all=items();
+  const tot=x=>CUST.reduce((s,c)=>s+ord(c,x.id),0);
+  const plan=all.reduce((s,x)=>s+x.wholesale*x.units,0),got=all.reduce((s,x)=>s+x.wholesale*tot(x),0);
+  const low=all.filter(x=>x.units&&tot(x)/x.units<.5).length;
+  $("siKpis").innerHTML=[["Planned sell-in",eur(plan)],["Ordered so far",eur(got)],["Coverage",(plan?got/plan*100:0).toFixed(0)+"%"],["Articles <50% covered",low]]
+    .map(([l,v])=>`<div class="card kpi"><div class="l">${l}</div><div class="v">${v}</div></div>`).join("");
+  $("siHead").innerHTML=`<tr><th>Article</th><th>Name</th><th class="n">Plan</th>${CUST.map(c=>`<th class="n">${c}</th>`).join("")}<th class="n">Ordered</th><th>Coverage</th></tr>`;
+  $("siBody").innerHTML=all.map(x=>{const t=tot(x),c=x.units?t/x.units*100:0,cls=c<50?"m-low":c<80?"m-mid":"m-good";
+    return `<tr><td>${x.article}</td><td>${x.name}</td><td class="n">${x.units.toLocaleString("en-GB")}</td>${CUST.map(cu=>`<td class="n"><input class="num" type="number" min="0" step="10" data-c="${cu}" data-a="${x.id}" value="${ord(cu,x.id)}"></td>`).join("")}<td class="n">${t.toLocaleString("en-GB")}</td><td class="${cls}"><span class="cov"><i style="width:${Math.min(c,100)}%"></i></span>${c.toFixed(0)}%</td></tr>`}).join("");
+  $("siFoot").innerHTML=`<tr><td colspan="2"><b>Total</b></td><td class="n"><b>${all.reduce((s,x)=>s+x.units,0).toLocaleString("en-GB")}</b></td>${CUST.map(c=>`<td class="n"><b>${all.reduce((s,x)=>s+ord(c,x.id),0).toLocaleString("en-GB")}</b></td>`).join("")}<td class="n"><b>${all.reduce((s,x)=>s+tot(x),0).toLocaleString("en-GB")}</b></td><td></td></tr>`;
+}
+$("siBody").onchange=e=>{const d=e.target.dataset;if(!d.c)return;
+  const o=S.orders[S.current]||(S.orders[S.current]={});(o[d.c]||(o[d.c]={}))[d.a]=Math.max(0,Number(e.target.value)||0);save();renderSellin()};
+
+// ---- compare
+function stats(se){const l=S.seasons[se]||[],rev=l.reduce((s,x)=>s+x.wholesale*x.units,0),cost=l.reduce((s,x)=>s+x.cost*x.units,0),u=l.reduce((s,x)=>s+x.units,0);
+  const m=[["Articles",l.length,v=>v],["Planned units",u,v=>v.toLocaleString("en-GB")],["Sell-in value",rev,eur],["Blended margin",rev?(rev-cost)/rev*100:0,v=>v.toFixed(1)+"%"]];
+  CATS.forEach(c=>m.push([c+" sell-in",l.filter(x=>x.category===c).reduce((s,x)=>s+x.wholesale*x.units,0),eur]));
+  return m}
+function renderCompare(){
+  const names=Object.keys(S.seasons),opts=names.map(n=>`<option>${n}</option>`).join("");
+  const a=$("cmpA").value||names[0],b=$("cmpB").value||names[1]||names[0];
+  $("cmpA").innerHTML=opts;$("cmpB").innerHTML=opts;$("cmpA").value=names.includes(a)?a:names[0];$("cmpB").value=names.includes(b)?b:names[0];
+  const A=stats($("cmpA").value),B=stats($("cmpB").value);
+  $("cA").textContent=$("cmpA").value;$("cB").textContent=$("cmpB").value;
+  $("cmpBody").innerHTML=A.map(([l,va,fm],i)=>{const vb=B[i][1],d=vb-va,pct=va?d/va*100:0;
+    return `<tr><td>${l}</td><td class="n">${fm(va)}</td><td class="n">${fm(vb)}</td><td class="n ${d>0?"m-good":d<0?"m-low":""}">${d>0?"+":""}${l==="Blended margin"?d.toFixed(1)+" pp":pct.toFixed(0)+"%"}</td></tr>`}).join("");
+}
+$("cmpA").onchange=$("cmpB").onchange=renderCompare;
 render();
 </script>
 </body>
